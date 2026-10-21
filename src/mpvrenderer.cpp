@@ -39,6 +39,19 @@ MpvRenderer::MpvRenderer(MpvAbstractItem *new_obj)
 
 void MpvRenderer::render()
 {
+    // Consume the pending render update and re-arm mpv's update callback.
+    //
+    // mpv's render-context update callback is edge-triggered: libmpv will not
+    // invoke it again until mpv_render_context_update() has been called to
+    // acknowledge the outstanding notification. Without this call the item
+    // receives exactly one on_mpv_redraw, renders a single frame, and the
+    // render pump then stalls permanently - the video stays black while audio
+    // continues, and libmpv logs "mpv_render_context_render() not being called
+    // or stuck". Any later repaint (e.g. a resize or a fullscreen toggle)
+    // temporarily restarts it, which is why toggling fullscreen appears to
+    // "fix" playback.
+    mpv_render_context_update(m_mpvAItem->d_ptr->m_mpv_gl);
+
     QOpenGLFramebufferObject *fbo = framebufferObject();
     mpv_opengl_fbo mpfbo;
     mpfbo.fbo = static_cast<int>(fbo->handle());
