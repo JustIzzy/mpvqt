@@ -12,6 +12,7 @@
 #include <QGuiApplication>
 #include <QOpenGLContext>
 #include <QOpenGLFramebufferObject>
+#include <QOpenGLFunctions>
 #include <QQuickWindow>
 
 static void *get_proc_address_mpv(void *ctx, const char *name)
@@ -52,6 +53,7 @@ void MpvRenderer::render()
     // "fix" playback.
     mpv_render_context_update(m_mpvAItem->d_ptr->m_mpv_gl);
 
+
     QOpenGLFramebufferObject *fbo = framebufferObject();
     mpv_opengl_fbo mpfbo;
     mpfbo.fbo = static_cast<int>(fbo->handle());
@@ -71,6 +73,14 @@ void MpvRenderer::render()
     // See render_gl.h on what OpenGL environment mpv expects, and
     // other API details.
     mpv_render_context_render(m_mpvAItem->d_ptr->m_mpv_gl, params);
+
+    // Tell mpv the frame reached the screen.
+    //
+    // Without this mpv is never told that rendered frames were presented, which
+    // the render API contract requires. (Note: this does NOT cause the
+    // "core-idle stays true" behaviour an earlier revision of this comment
+    // claimed - core-idle does go false and playing() is emitted regardless.)
+    mpv_render_context_report_swap(m_mpvAItem->d_ptr->m_mpv_gl);
 }
 
 QOpenGLFramebufferObject *MpvRenderer::createFramebufferObject(const QSize &size)
