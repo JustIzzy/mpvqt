@@ -7,6 +7,7 @@
 #include "mpvcontroller.h"
 #include "mpvcontroller_p.h"
 
+#include <QFileInfo>
 #include <QStandardPaths>
 #include <QVariant>
 
@@ -179,16 +180,40 @@ void MpvController::init()
     if (!d_ptr->m_mpv) {
         qFatal("could not create mpv context");
     }
+
+    // Config loading must be enabled, and the include set, BEFORE
+    // mpv_initialize(). "config", "config-dir" and "include" are only honoured
+    // during mpv's option pre-parse; assigning them afterwards is accepted but
+    // has no effect.
+    //
+    // libmpv defaults to config=no, so without this an embedding application
+    // silently gets none of its mpv.conf: no shaders, no tone-mapping options,
+    // no deband, no dither or ICC settings - just mpv's built-in defaults.
+    // Hosts that ship a profile directory point MPV_HOME at it, and mpv then
+    // resolves mpv.conf, scripts/ and shaders/ from there.
+    if (mpv_set_option_string(d_ptr->m_mpv, "config", "yes") < 0) {
+        qWarning("mpvqt: could not enable mpv config file loading");
+    }
+
+    // mpvqt's own optional config file. Guarded on existence: passing "include"
+    // a path that does not exist makes mpv emit an error for every startup.
+    QString configPath = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
+    configPath.append(QStringLiteral("/mpvqt"));
+    configPath.append(QStringLiteral("/mpvqt.conf"));
+    if (QFileInfo::exists(configPath)) {
+        if (mpv_set_option_string(d_ptr->m_mpv, "include", configPath.toUtf8().constData()) < 0) {
+            qWarning("mpvqt: could not include %s", qUtf8Printable(configPath));
+        }
+    }
+
     if (mpv_initialize(d_ptr->m_mpv) < 0) {
         qFatal("could not initialize mpv context");
     }
     mpv_set_wakeup_callback(d_ptr->m_mpv, MpvController::mpvEvents, this);
 
-    // otherwise mpv opens a separate window
-    QString configPath = QStandardPaths::writableLocation(QStandardPaths::ConfigLocation);
-    configPath.append(QStringLiteral("/mpvqt"));
-    configPath.append(QStringLiteral("/mpvqt.conf"));
-    setProperty(QStringLiteral("include"), configPath);
+    // Must stay after initialize, and must win over any vo= in a config file:
+    // rendering goes through the render API into a Qt scene graph node, so any
+    // other video output would open a separate window.
     setProperty(QStringLiteral("vo"), QStringLiteral("libmpv"));
 }
 
